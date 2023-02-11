@@ -1,0 +1,76 @@
+name: main
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      # Expose matched filters as job 'packages' output variable
+      packages: ${{ steps.get_changed.outputs.packages }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      # For pull requests it's not necessary to checkout the code
+      - name: Get changed packages
+        id: get_changed
+        continue-on-error: false
+        run: |
+          changed=$(git diff --no-renames --name-only HEAD^1 | paste -sd " " -)
+
+          folders=()
+          for f in $changed; do
+              folder=$(echo "$f" | awk -F "/" '{print $1}')
+              if [ ! -d "$folder" ]; then
+                  echo "Skipping $folder as it is not a folder"
+                  continue
+              fi
+              if [[ "$folder" == ".github" ]]; then
+                  echo "Skipping $folder as it is .github"
+                  continue
+              fi
+              echo "Adding $folder to folders"
+              folders+=($folder)
+          done
+          unique_folders=($(printf "%s\n" "${folders[@]}" | sort -u | tr '\n' ' '))
+          echo "packages=$(jq --compact-output --null-input '$ARGS.positional' --args -- ${unique_folders[@]})" >> $GITHUB_OUTPUT
+
+  build:
+    needs: changes
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch:
+          - mips_24kc
+          - mipsel_24kc
+        package: ${{ fromJSON(needs.changes.outputs.packages) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Build ${{ matrix.package }}-${{ matrix.arch }}
+        uses: openwrt/gh-action-sdk@master
+        env:
+          NO_REFRESH_CHECK: true
+          FEEDNAME: packages_ci
+          ARCH: ${{ matrix.arch }}
+          PACKAGES: ${{ matrix.package }}
+          V: sc
+
+      - name: Store packages
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ matrix.package }}-${{ matrix.arch }}
+          path: bin/packages/${{ matrix.arch }}/packages_ci/*.ipk
+
+      - name: Store logs
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ matrix.package }}-${{ matrix.arch }}-logs
+          path: logs/
