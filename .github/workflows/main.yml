@@ -59,7 +59,7 @@ jobs:
         env:
           NO_REFRESH_CHECK: true
           FEEDNAME: packages_ci
-          ARCH: ${{ matrix.arch }}
+          ARCH: ${{ matrix.arch }}-22.03.5
           PACKAGES: ${{ matrix.package }}
           V: sc
 
